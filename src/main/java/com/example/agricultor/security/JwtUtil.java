@@ -6,14 +6,17 @@ import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Component;
 import java.security.Key;
 import java.util.Date;
+import org.springframework.beans.factory.annotation.Value;
 
 @Component
 public class JwtUtil {
-    // ESTA CLAVE DEBE SER LA MISMA QUE USA EL SISTEMA QUE GENERA EL TOKEN
-    private final String SECRET_KEY = "tu_clave_secreta_super_larga_y_segura_aqui";
+
+    @Value("${jwt.secret}")
+    private String secretKey;
 
     public Claims getClaims(String token) {
-        Key key = Keys.hmacShaKeyFor(SECRET_KEY.getBytes());
+        // Convertimos el String a una Key segura para HS256
+        Key key = Keys.hmacShaKeyFor(secretKey.getBytes());
         return Jwts.parserBuilder()
                 .setSigningKey(key)
                 .build()
