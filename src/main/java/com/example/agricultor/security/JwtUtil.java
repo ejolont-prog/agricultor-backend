@@ -32,4 +32,18 @@ public class JwtUtil {
             return false;
         }
     }
+
+
+    public Long getUserIdFromToken(String token) {
+        // Si el token viene con el prefijo "Bearer ", lo quitamos
+        if (token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
+        Claims claims = getClaims(token);
+        // Extraemos el ID que guardamos con la clave "idUsuario"
+        // Es importante usar el mismo nombre que pusiste en generateToken
+        return claims.get("idUsuario", Long.class);
+    }
+
 }
