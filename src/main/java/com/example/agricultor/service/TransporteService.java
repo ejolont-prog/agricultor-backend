@@ -16,6 +16,7 @@ public class TransporteService {
         return repository.findByEliminadoFalse();
     }
 
+
     public Transporte guardar(Transporte transporte) {
         transporte.setEliminado(false); // Por defecto no está eliminado
         return repository.save(transporte);
