@@ -24,48 +24,55 @@ public class JwtFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        // 1. Obtener el encabezado de Authorization
         String authHeader = request.getHeader("Authorization");
+        String path = request.getServletPath();
 
+        // 1. OMITIR VALIDACIÓN PARA RUTAS PÚBLICAS (Login, Swagger, etc.)
+        // Agregué /api/auth/ porque es donde suele estar el login
+        if (path.contains("/swagger-ui") ||
+                path.contains("/v3/api-docs") ||
+                path.contains("/public") ||
+                path.startsWith("/api/auth/")) {
+
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // 2. VALIDACIÓN DEL TOKEN
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
 
             try {
-                // 2. Validar el token
                 if (jwtUtil.isTokenValid(token)) {
-                    // 3. Extraer los datos del usuario (Claims)
                     Claims claims = jwtUtil.getClaims(token);
                     String username = claims.getSubject();
 
-                    // 4. Crear la autenticación para Spring Security
-                    // Usamos una lista vacía de permisos (roles) por ahora
+                    // Log de depuración
+                    System.out.println("--- TOKEN VÁLIDO PARA: " + username + " ---");
+
+                    // Crear autenticación (Sin roles por ahora, pero con contexto)
                     UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
                             username,
                             null,
-                            Collections.emptyList()
+                            org.springframework.security.core.authority.AuthorityUtils.createAuthorityList("ROLE_USER")
                     );
 
-                    // 5. Establecer la autenticación en el contexto de seguridad
                     SecurityContextHolder.getContext().setAuthentication(auth);
 
-                    // 6. Dejar que la petición continúe
+                    // IMPORTANTE: Continuar la cadena y salir del método
                     filterChain.doFilter(request, response);
                     return;
                 }
             } catch (Exception e) {
-                // Si algo falla al procesar el token, el flujo caerá al error 401
+                System.out.println("--- ERROR JWT: " + e.getMessage() + " ---");
             }
         }
 
-        // 7. Si llega aquí es porque no hubo token o fue inválido
-        // IMPORTANTE: Permitir que rutas públicas (como Swagger) pasen sin token
-        String path = request.getServletPath();
-        if (path.contains("/swagger-ui") || path.contains("/v3/api-docs") || path.contains("/public")) {
-            filterChain.doFilter(request, response);
-        } else {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"error\": \"Token invalido o ausente\"}");
-        }
+        // 3. SI NO HAY TOKEN O ES INVÁLIDO (Y NO ES RUTA PÚBLICA)
+        // Solo enviamos error si realmente la ruta requiere autenticación
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write("{\"error\": \"Token inválido o ausente\", \"path\": \"" + path + "\"}");
     }
 }

@@ -20,41 +20,49 @@ public class SecurityConfig {
     public SecurityConfig(JwtFilter jwtFilter) {
         this.jwtFilter = jwtFilter;
     }
+
     @Value("${app.cors.allowed-origins}")
     private List<String> allowedOrigins;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // 1. Deshabilitar CSRF (no es necesario para APIs con Tokens)
-                .csrf(csrf -> csrf.disable())
-
-                // 2. Configurar CORS para que tu Angular (localhost:4200) pueda entrar
+                // 1. Configuración de CORS robusta
                 .cors(cors -> cors.configurationSource(request -> {
                     CorsConfiguration config = new CorsConfiguration();
                     config.setAllowedOrigins(allowedOrigins);
                     config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-                    config.setAllowedHeaders(List.of("*"));
+                    config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+                    config.setAllowCredentials(true);
                     return config;
                 }))
-
-                // 3. Configurar qué rutas son públicas y cuáles protegidas
+                // 2. Deshabilitar CSRF (necesario para APIs con Token)
+                .csrf(csrf -> csrf.disable())
+                // 3. Política sin estado
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // 4. Autorización de rutas
                 .authorizeHttpRequests(auth -> auth
-                        // Permitir acceso a Swagger/OpenAPI sin token
-                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        // Permitir acceso a tus rutas públicas (si tienes)
-                        .requestMatchers("/public/**").permitAll()
-                        // Todo lo demás requiere token
+                        .requestMatchers("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
+                        .requestMatchers("/api/transportistas/**").authenticated() // Asegura que esta ruta pida token
                         .anyRequest().authenticated()
                 )
-
-                // 4. No guardar estado (porque usamos JWT, no Cookies/Sessions)
-                .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-                // 5. REGISTRAR TU FILTRO
-                // Esto le dice a Spring: "Antes de validar el usuario, corre mi JwtFilter"
+                // 5. Agregar tu filtro
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
+
+    @Bean
+    public org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(List.of("http://localhost:4200")); // Tu URL de Angular
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
+        configuration.setAllowCredentials(true);
+
+        org.springframework.web.cors.UrlBasedCorsConfigurationSource source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
 }
