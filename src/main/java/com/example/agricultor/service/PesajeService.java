@@ -6,6 +6,8 @@ import com.example.agricultor.repository.PesajeRepository;
 import com.example.agricultor.security.UserSecurityService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -31,15 +33,23 @@ public class PesajeService {
     }
 
     public Pesaje guardarPesaje(Pesaje pesaje) {
-        // 1. Obtenemos el contexto (ID Usuario e ID Perfil)
+        // 1. Obtenemos el contexto (ID Usuario e ID Perfil del token)
         UserSessionContext session = userSecurity.getUserSession();
 
-    /*
-        pesaje.setIdusuario(session.getIdUsuario()); // Quién lo creó
-        pesaje.setIdperfil(session.getIdPerfil());   // A qué perfil pertenece
-*/
+        // 2. Seteamos los campos de relación con el usuario y perfil
+        pesaje.setIdperfilagricultor(session.getIdPerfil());
+
+        if (session.getIdUsuario() != null) {
+            pesaje.setCreadopor(session.getIdUsuario().intValue());
+            pesaje.setModificadopor(session.getIdUsuario().intValue());
+        }
+
+        // 3. Auditoría y estados iniciales
+        pesaje.setFechacreacion(LocalDateTime.now());
+        pesaje.setFechamodificacion(LocalDateTime.now());
         pesaje.setEliminado(false);
 
+        // 4. Guardar en la base de datos
         return repository.save(pesaje);
     }
 }

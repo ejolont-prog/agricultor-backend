@@ -11,4 +11,6 @@ public interface PesajeRepository extends JpaRepository<Pesaje, Long> {
 
     // El nombre debe ser findBy + NombreDelCampo + And + Condición
     List<Pesaje> findByIdperfilagricultorAndEliminadoFalse(Long idperfilagricultor);
+
+
 }
