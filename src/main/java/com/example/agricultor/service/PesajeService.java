@@ -22,7 +22,7 @@ public class PesajeService {
     private com.example.agricultor.repository.CatalogoRepository catalogoRepository; // <--- Inyecta el repo de catálogos
 
     public List<Pesaje> obtenerPesajesActivos() {
-        Long idPerfil = userSecurity.getUserSession().getIdPerfil();
+        Long idPerfil = userSecurity.getUserSession().getIdPerfil();e
 
         if (idPerfil == null) {
             return new java.util.ArrayList<>();
