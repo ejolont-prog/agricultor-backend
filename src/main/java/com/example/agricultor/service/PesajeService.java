@@ -28,18 +28,21 @@ public class PesajeService {
             return new java.util.ArrayList<>();
         }
 
-        // 1. Obtienes la lista de pesajes (que solo traen el ID en el campo 'estado')
         List<Pesaje> listaPesajes = repository.findByIdperfilagricultorAndEliminadoFalse(idPerfil);
 
-        // 2. Traes la lista de descripciones del catálogo (ID 12 es Estados Pesaje)
-        var estadosCatalogo = catalogoRepository.findByIdcatalogo(12);
+        // Usamos 12L para asegurar que sea Long
+        var estadosCatalogo = catalogoRepository.findByIdcatalogo(12L);
 
-        // 3. Cruzamos los datos: por cada pesaje, buscamos su nombre en el catálogo
         listaPesajes.forEach(pesaje -> {
-            estadosCatalogo.stream()
-                    .filter(cat -> cat.getId().equals(pesaje.getEstado().longValue()))
-                    .findFirst()
-                    .ifPresent(cat -> pesaje.setNombreEstado(cat.getNombre())); // Llenamos el campo @Transient
+            // Obtenemos el valor del estado como Long para comparar correctamente
+            Long estadoId = (pesaje.getEstado() != null) ? pesaje.getEstado().longValue() : null;
+
+            if (estadoId != null) {
+                estadosCatalogo.stream()
+                        .filter(cat -> cat.getId().equals(estadoId)) // Aquí comparamos Long con Long
+                        .findFirst()
+                        .ifPresent(cat -> pesaje.setNombreEstado(cat.getNombre()));
+            }
         });
 
         return listaPesajes;

@@ -22,9 +22,13 @@ public class UserSecurityService {
     public Long getCurrentUserId() {
         String authHeader = request.getHeader("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            return jwtUtil.getUserIdFromToken(authHeader);
+            // CORRECCIÓN AQUÍ: Quitamos "Bearer " (los primeros 7 caracteres)
+            // y usamos .trim() para quitar cualquier espacio accidental al final.
+            String token = authHeader.substring(7).trim();
+
+            return jwtUtil.getUserIdFromToken(token);
         }
-        throw new RuntimeException("No se encontró token");
+        throw new RuntimeException("No se encontró un token válido en la cabecera");
     }
 
     // TRAER ID Y IDPERFIL

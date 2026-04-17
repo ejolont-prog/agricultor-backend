@@ -6,7 +6,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "transportistas", schema = "agricultor")
+@Table(name = "transportistas", schema = "beneficio")
 @Data
 public class Transportista {
 
@@ -23,21 +23,27 @@ public class Transportista {
     private LocalDate fechaNacimiento;
 
     @Column(name = "tipolicencia")
-    private Integer tipoLicencia;
+    private String tipoLicencia; // Se guarda como String en beneficio
 
     @Column(name = "fechavencimientolicencia")
     private LocalDate fechaVencimientoLicencia;
 
-    private Integer estado;
+    private Integer estado; // Se guardará como NULL según pediste
 
-    private Boolean disponible;
+    @Column(name = "creadopor")
+    private Integer creadopor; // Se guardará como 1 siempre
 
-    // Relación con el usuario que lo creó
-    @Column(name = "creadorpor")
-    private Integer creadopor;
-
-    @Column(name = "fechacreacion")
+    @Column(name = "fechacreacion", updatable = false)
     private LocalDateTime fechaCreacion;
 
-    private Boolean eliminado;
+    private Boolean eliminado = false;
+
+    @PrePersist
+    protected void onCreate() {
+        fechaCreacion = LocalDateTime.now();
+        if (eliminado == null) eliminado = false;
+    }
+
+    @Transient
+    private String nombreEstado;
 }
