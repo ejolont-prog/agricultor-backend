@@ -9,7 +9,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-
 @Service
 public class PesajeService {
 
@@ -17,26 +16,37 @@ public class PesajeService {
     private PesajeRepository repository;
 
     @Autowired
-    private UserSecurityService userSecurity; // Inyectamos tu clase de seguridad
+    private UserSecurityService userSecurity;
+
+    @Autowired
+    private com.example.agricultor.repository.CatalogoRepository catalogoRepository; // <--- Inyecta el repo de catálogos
 
     public List<Pesaje> obtenerPesajesActivos() {
-        // 1. Obtenemos el ID del perfil (que ya viene como Long de tu UserSecurityService)
         Long idPerfil = userSecurity.getUserSession().getIdPerfil();
 
-        // 2. Verificación básica
         if (idPerfil == null) {
             return new java.util.ArrayList<>();
         }
 
-        // 3. Ya no hay error porque Long = Long
-        return repository.findByIdperfilagricultorAndEliminadoFalse(idPerfil);
+        // 1. Obtienes la lista de pesajes (que solo traen el ID en el campo 'estado')
+        List<Pesaje> listaPesajes = repository.findByIdperfilagricultorAndEliminadoFalse(idPerfil);
+
+        // 2. Traes la lista de descripciones del catálogo (ID 12 es Estados Pesaje)
+        var estadosCatalogo = catalogoRepository.findByIdcatalogo(12);
+
+        // 3. Cruzamos los datos: por cada pesaje, buscamos su nombre en el catálogo
+        listaPesajes.forEach(pesaje -> {
+            estadosCatalogo.stream()
+                    .filter(cat -> cat.getId().equals(pesaje.getEstado().longValue()))
+                    .findFirst()
+                    .ifPresent(cat -> pesaje.setNombreEstado(cat.getNombre())); // Llenamos el campo @Transient
+        });
+
+        return listaPesajes;
     }
 
     public Pesaje guardarPesaje(Pesaje pesaje) {
-        // 1. Obtenemos el contexto (ID Usuario e ID Perfil del token)
         UserSessionContext session = userSecurity.getUserSession();
-
-        // 2. Seteamos los campos de relación con el usuario y perfil
         pesaje.setIdperfilagricultor(session.getIdPerfil());
 
         if (session.getIdUsuario() != null) {
@@ -44,12 +54,12 @@ public class PesajeService {
             pesaje.setModificadopor(session.getIdUsuario().intValue());
         }
 
-        // 3. Auditoría y estados iniciales
         pesaje.setFechacreacion(LocalDateTime.now());
         pesaje.setFechamodificacion(LocalDateTime.now());
         pesaje.setEliminado(false);
 
-        // 4. Guardar en la base de datos
+        // Al guardar, JPA devuelve el objeto.
+        // Podrías también buscar el nombre del estado aquí si quieres que el front lo vea apenas cree el registro.
         return repository.save(pesaje);
     }
 }
