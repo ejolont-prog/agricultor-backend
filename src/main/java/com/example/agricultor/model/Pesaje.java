@@ -24,7 +24,7 @@ public class Pesaje {
 
     private Integer cantidadparcialidades; // int4
 
-    private Integer idperfilagricultor; // int4
+    private Long idperfilagricultor; // int4
 
     private Integer estado; // int4
 
