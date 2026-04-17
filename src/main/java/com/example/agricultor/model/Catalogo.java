@@ -12,12 +12,10 @@ public class Catalogo {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "idcatalogo")
-    private Long idCatalogo; // Este es el "9" que usaremos para licencias
-
     private String nombre;
 
-    private String descripcion;
+    @Column(name = "idcatalogo")
+    private Long idcatalogo;
 
     private Boolean estado;
 }

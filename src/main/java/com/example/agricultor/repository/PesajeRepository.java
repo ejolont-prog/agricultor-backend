@@ -8,5 +8,9 @@ import java.util.List;
 @Repository
 public interface PesajeRepository extends JpaRepository<Pesaje, Long> {
     // Para cumplir con el flujo de mostrar solo registros activos [cite: 94]
-    List<Pesaje> findByEliminadoFalse();
+
+    // El nombre debe ser findBy + NombreDelCampo + And + Condición
+    List<Pesaje> findByIdperfilagricultorAndEliminadoFalse(Long idperfilagricultor);
+
+
 }

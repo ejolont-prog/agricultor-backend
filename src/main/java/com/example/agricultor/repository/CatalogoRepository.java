@@ -8,7 +8,7 @@ import java.util.List;
 @Repository
 public interface CatalogoRepository extends JpaRepository<Catalogo, Long> {
 
-    // Busca todos los registros que pertenezcan al grupo (ej. 9 para licencias)
-    // y que estén activos (estado = true)
-    List<Catalogo> findByIdCatalogoAndEstadoTrue(Long idCatalogo);
+    List<Catalogo> findByIdcatalogo(Long idcatalogo);
+
+    List<Catalogo> findByIdcatalogoAndEstadoTrue(Long idcatalogo);
 }
