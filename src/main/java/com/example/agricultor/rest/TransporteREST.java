@@ -1,5 +1,7 @@
 package com.example.agricultor.rest;
 
+import com.example.agricultor.model.Transporte;
+import com.example.agricultor.model.Transportista;
 import com.example.agricultor.service.TransporteService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -47,5 +49,12 @@ public class TransporteREST {
             return ResponseEntity.ok(jdbcTemplate.queryForList(sql, idCatalogo));
         }
         return ResponseEntity.ok(jdbcTemplate.queryForList(sql, idCatalogo));
+    }
+
+
+
+    @GetMapping("/disponibles")
+    public ResponseEntity<List<Transporte>> listarDisponibles() {
+        return ResponseEntity.ok(service.listarDisponibles());
     }
 }

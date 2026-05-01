@@ -2,6 +2,7 @@ package com.example.agricultor.rest;
 
 import com.example.agricultor.model.Parcialidad;
 import com.example.agricultor.repository.ParcialidadRepository;
+import com.example.agricultor.service.ParcialidadService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,12 +17,17 @@ public class ParcialidadREST {
     @Autowired
     private ParcialidadRepository parcialidadRepository;
 
+    @Autowired
+    private ParcialidadService parcialidadService;
     // Crear Parcialidad (Flujo Básico)
     @PostMapping("/crear")
     public ResponseEntity<Parcialidad> crearParcialidad(@RequestBody Parcialidad parcialidad) {
-        parcialidad.setEliminado(false);
-        // Aquí se guarda en la base de datos
-        return ResponseEntity.ok(parcialidadRepository.save(parcialidad));
+        try {
+            Parcialidad resultado = parcialidadService.guardarYActualizarDisponibilidad(parcialidad);
+            return ResponseEntity.ok(resultado);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     // Listar por Pesaje (Para el flujo FA01: Ver Detalle)

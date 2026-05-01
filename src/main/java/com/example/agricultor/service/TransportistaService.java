@@ -25,6 +25,20 @@ public class TransportistaService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    public List<Transportista> listarDisponibles() {
+        String sql = "SELECT * FROM agricultor.transportistas " +
+                "WHERE estado = 28 AND disponible = true AND eliminado = false";
+
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Transportista t = new Transportista();
+            t.setIdtransportista(rs.getLong("idtransportista"));
+            t.setNombreCompleto(rs.getString("nombrecompleto"));
+            t.setCui(rs.getString("cui"));
+            t.setFechaVencimientoLicencia(rs.getObject("fechavencimientolicencia", LocalDate.class));
+            return t;
+        });
+    }
+
     @Transactional
     public Transportista crearTransportista(Transportista t) {
         Long idUsuarioLogueado = userSecurityService.getCurrentUserId();

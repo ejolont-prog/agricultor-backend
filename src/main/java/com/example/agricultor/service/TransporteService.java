@@ -1,10 +1,12 @@
 package com.example.agricultor.service;// --- IMPORTS DE SPRING FRAMEWORK ---
+import com.example.agricultor.model.Transportista;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 // --- IMPORTS DE JAVA UTIL ---
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +27,24 @@ public class TransporteService {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    public List<Transporte> listarDisponibles() {
+        // Nota: Asegúrate de que el esquema sea 'beneficio' o 'agricultor' según tu DB real
+        String sql = "SELECT * FROM agricultor.transportes " +
+                "WHERE disponible = true AND eliminado = false";
+
+        return jdbcTemplate.query(sql, (rs, rowNum) -> {
+            Transporte t = new Transporte();
+            t.setIdtransporte(rs.getLong("idtransporte"));
+            t.setPlaca(rs.getString("placa"));
+            t.setMarca(rs.getString("marca"));
+            t.setColor(rs.getString("color"));
+            t.setLinea(rs.getString("linea"));
+            t.setModelo(rs.getString("modelo"));
+
+            return t;
+        });
+    }
 
     @Transactional
     public Transporte crearTransporte(Map<String, Object> payload) {

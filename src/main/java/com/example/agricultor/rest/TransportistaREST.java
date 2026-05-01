@@ -35,4 +35,11 @@ public class TransportistaREST {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error técnico: " + e.getMessage());
         }
     }
+
+
+    @GetMapping("/disponibles")
+    public ResponseEntity<List<Transportista>> listarDisponibles() {
+        return ResponseEntity.ok(service.listarDisponibles());
+    }
+
 }

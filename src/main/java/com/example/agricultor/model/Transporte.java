@@ -43,4 +43,7 @@ public class Transporte {
 
     @Transient
     private String tipoPlacaNombre; // Para el combo de tipos de placa
+
+
+
 }

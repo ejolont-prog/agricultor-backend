@@ -38,6 +38,10 @@ public class Transportista {
 
     private Boolean eliminado = false;
 
+
+
+
+
     @PrePersist
     protected void onCreate() {
         fechaCreacion = LocalDateTime.now();
