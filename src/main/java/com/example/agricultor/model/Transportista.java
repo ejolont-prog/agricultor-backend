@@ -38,10 +38,6 @@ public class Transportista {
 
     private Boolean eliminado = false;
 
-
-
-
-
     @PrePersist
     protected void onCreate() {
         fechaCreacion = LocalDateTime.now();
@@ -50,4 +46,7 @@ public class Transportista {
 
     @Transient
     private String nombreEstado;
+
+    private Integer modificadopor;
+    private LocalDateTime fechamodificacion;
 }

@@ -3,6 +3,7 @@ package com.example.agricultor.security;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import java.security.Key;
@@ -38,5 +39,10 @@ public class JwtUtil {
 
     public Long getUserIdFromToken(String token) {
         return getClaims(token).get("idUsuario", Long.class);
+    }
+
+    @PostConstruct
+    public void testSecret() {
+        System.out.println("JWT SECRET = " + secretKey);
     }
 }

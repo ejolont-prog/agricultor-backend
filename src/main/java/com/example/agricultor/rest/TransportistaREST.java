@@ -1,5 +1,6 @@
 package com.example.agricultor.rest;
 
+import com.example.agricultor.dto.TransportistaRequestDTO;
 import com.example.agricultor.exception.BusinessException;
 import com.example.agricultor.model.Transportista;
 import com.example.agricultor.service.TransportistaService;
@@ -8,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/transportistas")
@@ -23,16 +25,18 @@ public class TransportistaREST {
     }
 
     @PostMapping
-    public ResponseEntity<?> crearTransportista(@RequestBody Transportista transportista) {
+    public ResponseEntity<?> crear(@RequestBody TransportistaRequestDTO dto) {
         try {
-            Transportista nuevo = service.crearTransportista(transportista);
-            return ResponseEntity.ok(nuevo);
+            // Llamamos al método del servicio que acabamos de actualizar
+            Object resultado = service.crearTransportista(dto);
+            return ResponseEntity.status(HttpStatus.CREATED).body(resultado);
         } catch (BusinessException e) {
-            // Esto envía el texto exacto ("El transportista es menor de edad", etc.)
+            // Errores de validación (CUI duplicado, menor de edad, etc.)
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         } catch (Exception e) {
-            // Error genérico por si falla la base de datos
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error técnico: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error interno al crear transportista: " + e.getMessage());
         }
     }
 
@@ -42,4 +46,33 @@ public class TransportistaREST {
         return ResponseEntity.ok(service.listarDisponibles());
     }
 
+
+    @PutMapping("/sincronizar-estado")
+    public ResponseEntity<?> sincronizarEstado(
+            @RequestBody Map<String, Object> payload) {
+
+        try {
+
+            String cui = (String) payload.get("cui");
+
+            String nombreEstado =
+                    (String) payload.get("nombreEstado");
+
+            service.sincronizarEstadoDesdeBeneficio(
+                    cui,
+                    nombreEstado
+            );
+
+            return ResponseEntity.ok(
+                    Map.of("status", "Sincronización exitosa")
+            );
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            return ResponseEntity.status(500)
+                    .body(e.getMessage());
+        }
+    }
 }

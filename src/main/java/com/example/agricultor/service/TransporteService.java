@@ -1,6 +1,9 @@
 package com.example.agricultor.service;// --- IMPORTS DE SPRING FRAMEWORK ---
+import com.example.agricultor.dto.TransporteRequestDTO;
 import com.example.agricultor.model.Transportista;
+import com.example.agricultor.repository.CatalogoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,12 +18,26 @@ import com.example.agricultor.exception.BusinessException;
 import com.example.agricultor.model.Transporte;
 import com.example.agricultor.repository.TransporteRepository;
 import com.example.agricultor.security.UserSecurityService;
+import org.springframework.web.client.RestOperations;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
 
 @Service
 public class TransporteService {
 
     @Autowired
     private TransporteRepository repository;
+
+    @Autowired
+    private CatalogoRepository repositoryCatalogo;
 
     @Autowired
     private UserSecurityService userSecurityService;
@@ -47,67 +64,59 @@ public class TransporteService {
     }
 
     @Transactional
-    public Transporte crearTransporte(Map<String, Object> payload) {
+    public Object crearTransporte(TransporteRequestDTO dto) {
+        RestTemplate restTemplate = new RestTemplate();
+        String urlBeneficio = "http://localhost:8083/api/transportes-beneficio/validar-y-crear";
         Long idUsuarioLogueado = userSecurityService.getCurrentUserId();
+        dto.setNitAgricultor(obtenerNitUsuarioLogueado(idUsuarioLogueado));
+        String nitDelEmisor = obtenerNitUsuarioLogueado(idUsuarioLogueado);
+        dto.setNitAgricultor(nitDelEmisor);
 
-        // 1. EXTRAER DATOS DEL PAYLOAD
-        String placa = (String) payload.get("placa");
+        try {
+            ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            String token = (attrs != null) ? attrs.getRequest().getHeader("Authorization") : null;
 
-        // Obtenemos el modelo (año) directamente como String
-        Object modeloObj = payload.get("idModelo");
-        String anioModelo = (modeloObj != null) ? modeloObj.toString() : "N/A";
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            if (token != null) headers.set("Authorization", token);
 
-        // IDs para buscar nombres de catálogos (Marca, Linea, Color, TipoPlaca)
-        Object idTipoPlaca = payload.get("idTipoPlaca");
-        Object idMarca = payload.get("idMarca");
-        Object idLinea = payload.get("idLinea");
-        Object idColor = payload.get("idColor");
+            // --- IMPORTANTE: Aquí debes asegurarte que dto.getNombreMarca(), etc.
+            // vengan llenos desde el Frontend (Angular).
 
-        // --- 2. VALIDACIÓN DE PLACA ---
-        if (repository.existsByPlaca(placa)) {
-            throw new BusinessException("Ya existe un transporte registrado con la placa " + placa);
+
+            HttpEntity<TransporteRequestDTO> entity = new HttpEntity<>(dto, headers);
+            ResponseEntity<Object> respuesta = restTemplate.postForEntity(urlBeneficio, entity, Object.class);
+
+            if (respuesta.getStatusCode().is2xxSuccessful()) {
+                String sql = "INSERT INTO agricultor.transportes " +
+                        "(placa, tipoplaca, marca, color, linea, modelo, estado, disponible, creadopor) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+                String modeloString = (dto.getIdModelo() != null) ? String.valueOf(dto.getIdModelo()) : "N/A";
+                String tipoPlacaString = (dto.getIdTipoPlaca() != null) ? String.valueOf(dto.getIdTipoPlaca()) : null;
+
+                // Guardamos IDs en la base local de Agricultor
+                jdbcTemplate.update(sql,
+                        dto.getPlaca(),
+                        tipoPlacaString,
+                        dto.getIdMarca(),
+                        dto.getIdColor(),
+                        dto.getIdLinea(),
+                        modeloString,
+                        28,
+                        true,
+                        idUsuarioLogueado.intValue()
+                );
+
+                return respuesta.getBody();
+            }
+        } catch (HttpStatusCodeException e) {
+            throw new BusinessException(e.getResponseBodyAsString());
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new BusinessException("Error: " + e.getMessage());
         }
-
-        // --- 3. RECUPERAR NOMBRES PARA EL ESQUEMA BENEFICIO ---
-        String nombreTipoPlaca = obtenerNombreCatalogo(idTipoPlaca);
-        String nombreMarca = obtenerNombreCatalogo(idMarca);
-        String nombreLinea = obtenerNombreCatalogo(idLinea);
-        String nombreColor = obtenerNombreCatalogo(idColor);
-
-        // --- 4. GUARDAR EN BENEFICIO (JPA - Entidad Transporte) ---
-        Transporte t = new Transporte();
-        t.setPlaca(placa);
-        t.setMarca(nombreMarca);
-        t.setLinea(nombreLinea);
-        t.setColor(nombreColor);
-
-        // AQUÍ ESTÁ EL CAMBIO CLAVE: Asignamos el año directamente al campo modelo
-        t.setModelo(anioModelo);
-
-        t.setEstado(28); // ID fijo para el estado inicial
-        t.setCreadopor(idUsuarioLogueado.intValue());
-        t.setDisponible(true);
-
-        Transporte guardado = repository.save(t);
-
-        // --- 5. GUARDAR EN AGRICULTOR (JDBC - IDs y Año) ---
-        String sql = "INSERT INTO agricultor.transportes " +
-                "(placa, tipoplaca, marca, color, linea, modelo, estado, disponible, creadopor) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-
-        jdbcTemplate.update(sql,
-                placa,
-                (idTipoPlaca != null) ? idTipoPlaca.toString() : null,
-                idMarca,
-                idColor,
-                idLinea,
-                anioModelo, // Se guarda como varchar en agricultor también
-                28,
-                true,
-                idUsuarioLogueado.intValue()
-        );
-
-        return guardado;
+        throw new BusinessException("No se pudo completar el registro.");
     }
 
     public List<Map<String, Object>> listarTransportesPorUsuario() {
@@ -135,6 +144,40 @@ public class TransporteService {
             return jdbcTemplate.queryForObject(sql, String.class, id);
         } catch (Exception e) {
             return "N/A";
+        }
+    }
+
+    @Transactional
+    public void sincronizarEstadoDesdeBeneficio(String placa, String nombreEstado) {
+        System.out.println("Sincronizando Agricultor - Placa: " + placa + " Estado: " + nombreEstado);
+
+        // 1. Buscar el ID
+        Integer nuevoIdEstado = repositoryCatalogo.findIdByNombreAndCatalogoCuatro(nombreEstado);
+        System.out.println("ID encontrado en Catálogo 4 de Agricultor: " + nuevoIdEstado);
+
+        if (nuevoIdEstado == null) {
+            throw new BusinessException("No se encontró el estado '" + nombreEstado + "' en el catálogo de Agricultor (IDCATALOGO=4).");
+        }
+
+        // 2. Ejecutar Update con modificadopor fijo y fecha actual de la DB
+        // Usamos CURRENT_TIMESTAMP o NOW() directamente en el SQL para asegurar precisión
+        String sql = "UPDATE agricultor.transportes SET estado = ?, modificadopor = 1, fechamodificacion = CURRENT_TIMESTAMP WHERE placa = ?";
+
+        int filas = jdbcTemplate.update(sql, nuevoIdEstado, placa);
+        System.out.println("Filas actualizadas en Agricultor: " + filas);
+
+        if (filas == 0) {
+            throw new BusinessException("No se encontró registro para la placa: " + placa);
+        }
+    }
+
+    private String obtenerNitUsuarioLogueado(Long idUsuario) {
+        try {
+            // Consultamos el nit en la tabla de usuarios del esquema agricultor
+            String sql = "SELECT nit FROM agricultor.usuario WHERE idusuario = ?";
+            return jdbcTemplate.queryForObject(sql, String.class, idUsuario);
+        } catch (Exception e) {
+            return "N/A"; // Valor por defecto si no se encuentra
         }
     }
 }

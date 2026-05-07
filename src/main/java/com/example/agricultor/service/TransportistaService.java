@@ -1,13 +1,24 @@
 package com.example.agricultor.service;
 
+import com.example.agricultor.dto.TransportistaRequestDTO;
 import com.example.agricultor.exception.BusinessException;
 import com.example.agricultor.model.Transportista;
+import com.example.agricultor.repository.CatalogoRepository;
 import com.example.agricultor.repository.TransportistaRepository;
 import com.example.agricultor.security.UserSecurityService;
+import com.fasterxml.jackson.core.ObjectCodec;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.LocalDate;
 import java.time.Period;
@@ -21,6 +32,9 @@ public class TransportistaService {
 
     @Autowired
     private UserSecurityService userSecurityService;
+
+    @Autowired
+    private CatalogoRepository repositoryCatalogo;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -40,71 +54,66 @@ public class TransportistaService {
     }
 
     @Transactional
-    public Transportista crearTransportista(Transportista t) {
+    public Object crearTransportista(TransportistaRequestDTO dto) {
+        RestTemplate restTemplate = new RestTemplate();
+        String urlBeneficio = "http://localhost:8083/api/transportistas-beneficio/validar-y-crear";
         Long idUsuarioLogueado = userSecurityService.getCurrentUserId();
+        dto.setNitAgricultor(obtenerNitUsuarioLogueado(idUsuarioLogueado));
+        String nitDelEmisor = obtenerNitUsuarioLogueado(idUsuarioLogueado);
+        dto.setNitAgricultor(nitDelEmisor);
 
-        // --- 1. VALIDACIONES ---
-        if (repository.existsByCui(t.getCui())) {
-            throw new BusinessException("Ya existe un transportista registrado con el CUI " + t.getCui());
-        }
-
-        if (t.getFechaNacimiento() != null) {
-            if (Period.between(t.getFechaNacimiento(), LocalDate.now()).getYears() < 18) {
-                throw new BusinessException("El transportista es menor de edad");
+        // --- 1. VALIDACIÓN DE FECHA DE LICENCIA ---
+        if (dto.getFechaVencimientoLicencia() != null) {
+            // Comparamos contra el inicio del día de hoy
+            if (dto.getFechaVencimientoLicencia().isBefore(LocalDate.now())) {
+                throw new BusinessException("La licencia ya venció (" + dto.getFechaVencimientoLicencia() + "). No se puede registrar.");
             }
         }
 
-        if (t.getFechaVencimientoLicencia() != null) {
-            if (t.getFechaVencimientoLicencia().isBefore(LocalDate.now())) {
-                throw new BusinessException("La licencia se encuentra vencida");
-            }
+        // --- 2. VALIDACIÓN DE EDAD ---
+        if (dto.getFechaNacimiento() != null && Period.between(dto.getFechaNacimiento(), LocalDate.now()).getYears() < 18) {
+            throw new BusinessException("El transportista debe ser mayor de edad.");
         }
 
-        // --- MANEJO AUTOMÁTICO DE LICENCIA (ID para Agricultor, Nombre para Beneficio) ---
-        Integer idLicencia = null;
-        String nombreLicencia = "No especificada";
+        try {
+            ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            String token = (attrs != null) ? attrs.getRequest().getHeader("Authorization") : null;
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            if (token != null) headers.set("Authorization", token);
 
-        if (t.getTipoLicencia() != null) {
-            try {
-                idLicencia = Integer.parseInt(t.getTipoLicencia());
+            // --- 3. ENVIAR A BENEFICIO ---
 
-                // Consultamos el nombre a la BD usando el ID (asumiendo que tu tabla es agricultor.catalogos)
-                // Si tu tabla de catálogos tiene otro nombre, cámbialo aquí:
-                String sqlBusqueda = "SELECT nombre FROM agricultor.catalogos WHERE id = ?";
-                nombreLicencia = jdbcTemplate.queryForObject(sqlBusqueda, String.class, idLicencia);
+            HttpEntity<TransportistaRequestDTO> entity = new HttpEntity<>(dto, headers);
+            ResponseEntity<Object> respuesta = restTemplate.postForEntity(urlBeneficio, entity, Object.class);
 
-            } catch (Exception e) {
-                // Si no es un número o no lo encuentra, dejamos el valor original
-                nombreLicencia = t.getTipoLicencia();
+            if (respuesta.getStatusCode().is2xxSuccessful()) {
+                // --- 4. INSERT LOCAL (Asegúrate de que los nombres de columna coincidan) ---
+                String sql = "INSERT INTO agricultor.transportistas " +
+                        "(cui, nombrecompleto, fechanacimiento, tipolicencia, fechavencimientolicencia, estado, disponible, creadopor, eliminado) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+                jdbcTemplate.update(sql,
+                        dto.getCui(),
+                        dto.getNombreCompleto(),
+                        dto.getFechaNacimiento(),
+                        dto.getIdTipoLicencia(), // <--- ID numérico para Agricultor
+                        dto.getFechaVencimientoLicencia(),
+                        28,
+                        true,
+                        idUsuarioLogueado.intValue(),
+                        false
+                );
+                return respuesta.getBody();
             }
+        } catch (HttpStatusCodeException e) {
+            throw new BusinessException(e.getResponseBodyAsString());
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new BusinessException("Error: " + e.getMessage());
         }
-
-        // --- 2. GUARDAR EN BENEFICIO (Guardamos el TEXTO recuperado) ---
-        t.setCreadopor(1);
-        t.setEstado(null);
-        t.setTipoLicencia(nombreLicencia);
-        Transportista guardado = repository.save(t);
-
-        // --- 3. GUARDAR EN AGRICULTOR (Guardamos el ID numérico) ---
-        String sql = "INSERT INTO agricultor.transportistas " +
-                "(cui, nombrecompleto, fechanacimiento, tipolicencia, fechavencimientolicencia, estado, disponible, creadopor, eliminado) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-
-        jdbcTemplate.update(sql,
-                t.getCui(),
-                t.getNombreCompleto(),
-                t.getFechaNacimiento(),
-                idLicencia, // ID numérico
-                t.getFechaVencimientoLicencia(),
-                28,
-                true,
-                idUsuarioLogueado.intValue(),
-                false
-        );
-
-        return guardado;
+        throw new BusinessException("No se pudo completar el registro.");
     }
-
 
     public List<Transportista> listarPorAgricultor() {
         // 1. Obtenemos el ID del usuario logueado
@@ -133,5 +142,59 @@ public class TransportistaService {
 
             return transportista;
         }, idUsuarioLogueado);
+    }
+
+    private String obtenerNitUsuarioLogueado(Long idUsuario) {
+        try {
+            // Consultamos el nit en la tabla de usuarios del esquema agricultor
+            String sql = "SELECT nit FROM agricultor.usuario WHERE idusuario = ?";
+            return jdbcTemplate.queryForObject(sql, String.class, idUsuario);
+        } catch (Exception e) {
+            return "N/A"; // Valor por defecto si no se encuentra
+        }
+    }
+
+    @Transactional
+    public void sincronizarEstadoDesdeBeneficio(
+            String cui,
+            String nombreEstado) {
+
+        // =========================
+        // BUSCAR ID DEL ESTADO
+        // =========================
+
+        Integer nuevoIdEstado = repositoryCatalogo.findIdByNombreAndCatalogoCuatro(nombreEstado);
+
+        if (nuevoIdEstado == null) {
+
+            throw new BusinessException(
+                    "No existe estado: " + nombreEstado
+            );
+        }
+
+        // =========================
+        // UPDATE
+        // =========================
+
+        String sql = """
+        UPDATE agricultor.transportistas
+        SET estado = ?,
+            modificadopor = 1,
+            fechamodificacion = CURRENT_TIMESTAMP
+        WHERE cui = ?
+    """;
+
+        int filas = jdbcTemplate.update(
+                sql,
+                nuevoIdEstado,
+                cui
+        );
+
+        if (filas == 0) {
+
+            throw new BusinessException(
+                    "No existe transportista con CUI: " + cui
+            );
+        }
     }
 }
