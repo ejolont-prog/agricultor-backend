@@ -6,6 +6,7 @@ public class PesajeExternoDTO {
     private String nitagricultor;
     private BigDecimal pesototalesperado;
     private Long idPesaje;
+    private String unidadpeso;
 
     // Constructor vacío (necesario para la serialización de JSON)
     public PesajeExternoDTO() {
@@ -34,5 +35,13 @@ public class PesajeExternoDTO {
 
     public void setIdPesaje(Long idPesaje) {
         this.idPesaje = idPesaje;
+    }
+
+    public String getUnidadpeso() {
+        return unidadpeso;
+    }
+
+    public void setUnidadpeso(String unidadpeso) {
+        this.unidadpeso = unidadpeso;
     }
 }

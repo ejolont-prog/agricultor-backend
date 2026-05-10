@@ -87,17 +87,31 @@ public class PesajeService {
 
     private void enviarAPuerto(Pesaje pesaje) {
         try {
-            // 3. Buscar el NIT usando SQL directo
-            String sql = "SELECT nit FROM agricultor.perfilagricultor WHERE idperfil = ?";
-            String nit = jdbcTemplate.queryForObject(sql, String.class, pesaje.getIdperfilagricultor());
+            // 3. Buscar el NIT y el nombre de la unidad de medida
+            String sqlNit = "SELECT nit FROM agricultor.perfilagricultor WHERE idperfil = ?";
+            String nit = jdbcTemplate.queryForObject(sqlNit, String.class, pesaje.getIdperfilagricultor());
+
+            // Buscamos el nombre en la tabla catalogos usando el ID que viene en el pesaje
+            String sqlUnidad = "SELECT nombre FROM agricultor.catalogos WHERE id = ?";
+            String nombreUnidad = jdbcTemplate.queryForObject(sqlUnidad, String.class, pesaje.getIdunidadmedida());
 
             // 4. Construir el DTO de envío
             PesajeExternoDTO dto = new PesajeExternoDTO();
             dto.setNitagricultor(nit);
             dto.setPesototalesperado(pesaje.getPesototalestimado());
             dto.setIdPesaje(pesaje.getIdpesaje());
+            // Agregamos el nombre que acabamos de consultar
+            dto.setUnidadpeso(nombreUnidad);
 
-            // 5. Enviar por WebClient
+            try {
+                ObjectMapper mapper = new ObjectMapper();
+                String jsonFormat = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(dto);
+                System.out.println("📤 Enviando JSON a Beneficio:\n" + jsonFormat);
+            } catch (Exception e) {
+                System.err.println("Error al serializar DTO para log: " + e.getMessage());
+            }
+
+            // 5. Enviar por WebClient (Mantenemos toda tu lógica de suscripción)
             webClientBuilder.build()
                     .post()
                     .uri("http://localhost:8083/api/recepcion-pesaje/guardar-externo")
@@ -106,22 +120,18 @@ public class PesajeService {
                     .bodyValue(dto)
                     .retrieve()
                     .bodyToMono(RespuestaBeneficioDTO.class)
-                   
                     .subscribe(
                             res -> {
                                 System.out.println("✅ Beneficio respondió. Cuenta: " + res.getNocuenta());
 
-                                // 1. ACTUALIZACIÓN EN BASE DE DATOS (Pone nocuenta y estado 163)
+                                // 1. ACTUALIZACIÓN EN BASE DE DATOS
                                 actualizarPesajeLocal(res.getNocuenta(), res.getId());
 
                                 // 2. MODIFICAMOS EL DTO PARA EL FRONTEND
-                                // Le agregamos el estado 163 para que el WebSocket lo lleve al Angular
-                                // (Asegúrate de que RespuestaBeneficioDTO tenga estos campos o usa un Map)
                                 res.setEstado(163L);
-                                res.setNombreEstado("Cuenta Creada"); // O el nombre que corresponda al 163
+                                res.setNombreEstado("Cuenta Creada");
 
-                                // 3. --- ACTUALIZACIÓN EN TIEMPO REAL (WEBSOCKET) ---
-                                // Ahora 'res' lleva: id, nocuenta, estado y nombreEstado
+                                // 3. ACTUALIZACIÓN EN TIEMPO REAL (WEBSOCKET)
                                 messagingTemplate.convertAndSend("/topic/actualizacion-pesaje", res);
 
                                 System.out.println("🚀 Notificación enviada al socket con estado 163");
@@ -136,6 +146,7 @@ public class PesajeService {
             e.printStackTrace();
         }
     }
+
     private void actualizarPesajeLocal(String noCuenta, Long idPesaje) {
         try {
             // Modificamos el SQL para actualizar también el campo estado
