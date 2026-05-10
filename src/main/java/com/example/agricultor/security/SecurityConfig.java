@@ -33,8 +33,15 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
-                        // Asegúrate de que esta línea incluya exactamente la ruta del POST
+
+                        // --- MODIFICACIÓN PARA WEBSOCKETS ---
+                        // Permitimos el acceso al endpoint del socket y a sus sub-rutas (info, iframe, etc)
+                        .requestMatchers("/ws-agricultor/**").permitAll()
+
+                        // Rutas de negocio
                         .requestMatchers("/api/transportistas/**", "/api/transportes/**").hasRole("USER")
+
+                        // Cualquier otra ruta requiere estar logueado
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);

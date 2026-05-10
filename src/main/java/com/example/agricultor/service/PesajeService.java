@@ -1,14 +1,22 @@
 package com.example.agricultor.service;
 
+import com.example.agricultor.dto.PesajeExternoDTO;
+import com.example.agricultor.dto.RespuestaBeneficioDTO;
 import com.example.agricultor.model.Pesaje;
 import com.example.agricultor.model.UserSessionContext;
 import com.example.agricultor.repository.PesajeRepository;
 import com.example.agricultor.security.UserSecurityService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate; // <--- NUEVA IMPORTACIÓN
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.LocalDateTime;
 import java.util.List;
+
 @Service
 public class PesajeService {
 
@@ -19,32 +27,39 @@ public class PesajeService {
     private UserSecurityService userSecurity;
 
     @Autowired
-    private com.example.agricultor.repository.CatalogoRepository catalogoRepository; // <--- Inyecta el repo de catálogos
+    private com.example.agricultor.repository.CatalogoRepository catalogoRepository;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private WebClient.Builder webClientBuilder;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate; // <--- INYECTADO PARA WEBSOCKET
+
+    @Value("${api.agricultor.key}")
+    private String apiKey;
 
     public List<Pesaje> obtenerPesajesActivos() {
         Long idPerfil = userSecurity.getUserSession().getIdPerfil();
-
-        if (idPerfil == null) {
-            return new java.util.ArrayList<>();
-        }
+        if (idPerfil == null) return new java.util.ArrayList<>();
 
         List<Pesaje> listaPesajes = repository.findByIdperfilagricultorAndEliminadoFalse(idPerfil);
-
-        // Usamos 12L para asegurar que sea Long
         var estadosCatalogo = catalogoRepository.findByIdcatalogo(12L);
 
         listaPesajes.forEach(pesaje -> {
-            // Obtenemos el valor del estado como Long para comparar correctamente
             Long estadoId = (pesaje.getEstado() != null) ? pesaje.getEstado().longValue() : null;
-
             if (estadoId != null) {
                 estadosCatalogo.stream()
-                        .filter(cat -> cat.getId().equals(estadoId)) // Aquí comparamos Long con Long
+                        .filter(cat -> cat.getId().equals(estadoId))
                         .findFirst()
                         .ifPresent(cat -> pesaje.setNombreEstado(cat.getNombre()));
             }
         });
-
         return listaPesajes;
     }
 
@@ -61,8 +76,79 @@ public class PesajeService {
         pesaje.setFechamodificacion(LocalDateTime.now());
         pesaje.setEliminado(false);
 
-        // Al guardar, JPA devuelve el objeto.
-        // Podrías también buscar el nombre del estado aquí si quieres que el front lo vea apenas cree el registro.
-        return repository.save(pesaje);
+        // 1. Guardar localmente
+        Pesaje guardado = repository.save(pesaje);
+
+        // 2. Ejecutar proceso de envío asíncrono
+        enviarAPuerto(guardado);
+
+        return guardado;
+    }
+
+    private void enviarAPuerto(Pesaje pesaje) {
+        try {
+            // 3. Buscar el NIT usando SQL directo
+            String sql = "SELECT nit FROM agricultor.perfilagricultor WHERE idperfil = ?";
+            String nit = jdbcTemplate.queryForObject(sql, String.class, pesaje.getIdperfilagricultor());
+
+            // 4. Construir el DTO de envío
+            PesajeExternoDTO dto = new PesajeExternoDTO();
+            dto.setNitagricultor(nit);
+            dto.setPesototalesperado(pesaje.getPesototalestimado());
+            dto.setIdPesaje(pesaje.getIdpesaje());
+
+            // 5. Enviar por WebClient
+            webClientBuilder.build()
+                    .post()
+                    .uri("http://localhost:8083/api/recepcion-pesaje/guardar-externo")
+                    .header("X-API-KEY", apiKey)
+                    .header("Content-Type", "application/json")
+                    .bodyValue(dto)
+                    .retrieve()
+                    .bodyToMono(RespuestaBeneficioDTO.class)
+                   
+                    .subscribe(
+                            res -> {
+                                System.out.println("✅ Beneficio respondió. Cuenta: " + res.getNocuenta());
+
+                                // 1. ACTUALIZACIÓN EN BASE DE DATOS (Pone nocuenta y estado 163)
+                                actualizarPesajeLocal(res.getNocuenta(), res.getId());
+
+                                // 2. MODIFICAMOS EL DTO PARA EL FRONTEND
+                                // Le agregamos el estado 163 para que el WebSocket lo lleve al Angular
+                                // (Asegúrate de que RespuestaBeneficioDTO tenga estos campos o usa un Map)
+                                res.setEstado(163L);
+                                res.setNombreEstado("Cuenta Creada"); // O el nombre que corresponda al 163
+
+                                // 3. --- ACTUALIZACIÓN EN TIEMPO REAL (WEBSOCKET) ---
+                                // Ahora 'res' lleva: id, nocuenta, estado y nombreEstado
+                                messagingTemplate.convertAndSend("/topic/actualizacion-pesaje", res);
+
+                                System.out.println("🚀 Notificación enviada al socket con estado 163");
+                            },
+                            error -> {
+                                System.err.println("❌ Error en Beneficio: " + error.getMessage());
+                            }
+                    );
+
+        } catch (Exception e) {
+            System.err.println("Error en el proceso: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    private void actualizarPesajeLocal(String noCuenta, Long idPesaje) {
+        try {
+            // Modificamos el SQL para actualizar también el campo estado
+            String sql = "UPDATE agricultor.pesajes SET nocuenta = ?, estado = ? WHERE idpesaje = ?";
+
+            // Ejecutamos la actualización pasando: noCuenta, el ID de estado (163) e idPesaje
+            jdbcTemplate.update(sql, noCuenta, 163L, idPesaje);
+
+            System.out.println("✅ Agricultor actualizado: Pesaje " + idPesaje +
+                    " ahora tiene cuenta " + noCuenta + " y estado 163");
+
+        } catch (Exception e) {
+            System.err.println("❌ Error actualizando localmente: " + e.getMessage());
+        }
     }
 }
