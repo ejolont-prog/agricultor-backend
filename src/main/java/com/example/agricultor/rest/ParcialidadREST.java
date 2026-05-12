@@ -1,5 +1,6 @@
 package com.example.agricultor.rest;
 
+import com.example.agricultor.dto.ParcialidadConPlacaProjection;
 import com.example.agricultor.model.Parcialidad;
 import com.example.agricultor.repository.ParcialidadRepository;
 import com.example.agricultor.service.ParcialidadService;
@@ -31,8 +32,15 @@ public class ParcialidadREST {
     }
 
     // Listar por Pesaje (Para el flujo FA01: Ver Detalle)
-    @GetMapping("/pesaje/{idpesaje}")
+   /* @GetMapping("/pesaje/{idpesaje}")
     public List<Parcialidad> listarPorPesaje(@PathVariable Integer idpesaje) {
+        return parcialidadRepository.findByIdpesajeAndEliminadoFalse(idpesaje);
+    }
+
+    */
+
+    @GetMapping("/pesaje/{idpesaje}")
+    public List<ParcialidadConPlacaProjection> listarPorPesaje(@PathVariable Integer idpesaje) {
         return parcialidadRepository.findByIdpesajeAndEliminadoFalse(idpesaje);
     }
 
