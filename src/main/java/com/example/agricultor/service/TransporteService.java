@@ -54,25 +54,26 @@ public class TransporteService {
             Transporte t = new Transporte();
             t.setIdtransporte(rs.getLong("idtransporte"));
             t.setPlaca(rs.getString("placa"));
-            t.setMarca(rs.getString("marca"));
-            t.setColor(rs.getString("color"));
-            t.setLinea(rs.getString("linea"));
+            t.setMarca(rs.getInt("marca"));
+            t.setColor(rs.getInt("color"));
+            t.setLinea(rs.getInt("linea"));
             t.setModelo(rs.getString("modelo"));
 
             return t;
         });
     }
 
+    // En com.example.agricultor.service.TransporteService
     @Transactional
     public Object crearTransporte(TransporteRequestDTO dto) {
         RestTemplate restTemplate = new RestTemplate();
         String urlBeneficio = "http://localhost:8083/api/transportes-beneficio/validar-y-crear";
+
         Long idUsuarioLogueado = userSecurityService.getCurrentUserId();
         dto.setNitAgricultor(obtenerNitUsuarioLogueado(idUsuarioLogueado));
-        String nitDelEmisor = obtenerNitUsuarioLogueado(idUsuarioLogueado);
-        dto.setNitAgricultor(nitDelEmisor);
 
         try {
+            // EXTRAER EL TOKEN DE LA PETICIÓN ACTUAL PARA PASARLO A BENEFICIO
             ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             String token = (attrs != null) ? attrs.getRequest().getHeader("Authorization") : null;
 
@@ -80,43 +81,37 @@ public class TransporteService {
             headers.setContentType(MediaType.APPLICATION_JSON);
             if (token != null) headers.set("Authorization", token);
 
-            // --- IMPORTANTE: Aquí debes asegurarte que dto.getNombreMarca(), etc.
-            // vengan llenos desde el Frontend (Angular).
-
-
             HttpEntity<TransporteRequestDTO> entity = new HttpEntity<>(dto, headers);
+
+            // 1. Llamada a BENEFICIO
             ResponseEntity<Object> respuesta = restTemplate.postForEntity(urlBeneficio, entity, Object.class);
 
             if (respuesta.getStatusCode().is2xxSuccessful()) {
+                // 2. Si beneficio OK, guardamos en AGRICULTOR usando JPA o JDBC
                 String sql = "INSERT INTO agricultor.transportes " +
                         "(placa, tipoplaca, marca, color, linea, modelo, estado, disponible, creadopor) " +
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
-                String modeloString = (dto.getIdModelo() != null) ? String.valueOf(dto.getIdModelo()) : "N/A";
-                String tipoPlacaString = (dto.getIdTipoPlaca() != null) ? String.valueOf(dto.getIdTipoPlaca()) : null;
-
-                // Guardamos IDs en la base local de Agricultor
                 jdbcTemplate.update(sql,
-                        dto.getPlaca(),
-                        tipoPlacaString,
-                        dto.getIdMarca(),
-                        dto.getIdColor(),
-                        dto.getIdLinea(),
-                        modeloString,
-                        28,
+                        dto.getPlaca().toUpperCase(),
+                        dto.getIdTipoPlaca().intValue(),
+                        dto.getIdMarca().intValue(),
+                        dto.getIdColor().intValue(),
+                        dto.getIdLinea().intValue(),
+                        String.valueOf(dto.getIdModelo()),
+                        28, // ID Estado inicial en Agricultor
                         true,
                         idUsuarioLogueado.intValue()
                 );
-
                 return respuesta.getBody();
             }
         } catch (HttpStatusCodeException e) {
+            // Captura el error 400/403/500 que mande Beneficio
             throw new BusinessException(e.getResponseBodyAsString());
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new BusinessException("Error: " + e.getMessage());
+            throw new BusinessException("Error en comunicación: " + e.getMessage());
         }
-        throw new BusinessException("No se pudo completar el registro.");
+        return null;
     }
 
     public List<Map<String, Object>> listarTransportesPorUsuario() {
@@ -133,7 +128,7 @@ public class TransporteService {
                 "LEFT JOIN agricultor.catalogos c_color ON CAST(t.color AS INTEGER) = c_color.id " +
                 "LEFT JOIN agricultor.catalogos c_linea ON CAST(t.linea AS INTEGER) = c_linea.id " +
                 "LEFT JOIN agricultor.catalogos c_estado ON t.estado = c_estado.id " +
-                "WHERE t.creadopor = ?";
+                "WHERE t.creadopor = ? AND t.eliminado = false";
         return jdbcTemplate.queryForList(sql, idUsuarioLogueado.intValue());
     }
 

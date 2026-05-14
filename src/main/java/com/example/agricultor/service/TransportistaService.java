@@ -66,13 +66,13 @@ public class TransportistaService {
         if (dto.getFechaVencimientoLicencia() != null) {
             // Comparamos contra el inicio del día de hoy
             if (dto.getFechaVencimientoLicencia().isBefore(LocalDate.now())) {
-                throw new BusinessException("La licencia ya venció (" + dto.getFechaVencimientoLicencia() + "). No se puede registrar.");
+                throw new BusinessException("La licencia se encuentra vencida");
             }
         }
 
         // --- 2. VALIDACIÓN DE EDAD ---
         if (dto.getFechaNacimiento() != null && Period.between(dto.getFechaNacimiento(), LocalDate.now()).getYears() < 18) {
-            throw new BusinessException("El transportista debe ser mayor de edad.");
+            throw new BusinessException("El transportista es menor de edad");
         }
 
         try {
