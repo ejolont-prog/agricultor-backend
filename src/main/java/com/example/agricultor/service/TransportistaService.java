@@ -23,6 +23,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.time.LocalDate;
 import java.time.Period;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class TransportistaService {
@@ -115,33 +116,22 @@ public class TransportistaService {
         throw new BusinessException("No se pudo completar el registro.");
     }
 
-    public List<Transportista> listarPorAgricultor() {
-        // 1. Obtenemos el ID del usuario logueado
+    public List<Map<String, Object>> listarPorAgricultor() {
         Long idUsuarioLogueado = userSecurityService.getCurrentUserId();
 
-        // 2. Consulta con doble JOIN:
-        // c1 para el Estado, c2 para el Tipo de Licencia
         String sql = "SELECT t.cui, t.nombrecompleto, t.fechavencimientolicencia, t.disponible, " +
                 "c1.nombre as nombre_estado, " +
-                "c2.nombre as nombre_licencia " +
+                "c2.nombre as nombre_licencia, " +
+                "(SELECT p.nocuenta FROM agricultor.parcialidades parc " +
+                " JOIN agricultor.pesajes p ON parc.idpesaje = p.idpesaje " +
+                " WHERE parc.idtransportista = t.idtransportista AND parc.eliminado = false " +
+                " ORDER BY parc.fechacreacion DESC LIMIT 1) as nocuenta " +
                 "FROM agricultor.transportistas t " +
                 "INNER JOIN agricultor.catalogos c1 ON t.estado = c1.id " +
                 "INNER JOIN agricultor.catalogos c2 ON t.tipolicencia = c2.id " +
                 "WHERE t.creadopor = ? AND t.eliminado = false";
 
-        return jdbcTemplate.query(sql, (rs, rowNum) -> {
-            Transportista transportista = new Transportista();
-
-            transportista.setCui(rs.getString("cui"));
-            transportista.setNombreCompleto(rs.getString("nombrecompleto"));
-            transportista.setFechaVencimientoLicencia(rs.getObject("fechavencimientolicencia", LocalDate.class));
-
-            // Asignamos los nombres descriptivos a los campos temporales (@Transient)
-            transportista.setNombreEstado(rs.getString("nombre_estado"));
-            transportista.setTipoLicencia(rs.getString("nombre_licencia")); // Aquí ya va "Pesada", "Tipo A", etc.
-
-            return transportista;
-        }, idUsuarioLogueado);
+        return jdbcTemplate.queryForList(sql, idUsuarioLogueado.intValue());
     }
 
     private String obtenerNitUsuarioLogueado(Long idUsuario) {

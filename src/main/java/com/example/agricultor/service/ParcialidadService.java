@@ -2,10 +2,12 @@ package com.example.agricultor.service;
 
 import com.example.agricultor.dto.ParcialidadEnvioDTO;
 import com.example.agricultor.model.Parcialidad;
+import com.example.agricultor.model.UserSessionContext;
 import com.example.agricultor.repository.ParcialidadRepository;
 import com.example.agricultor.repository.PesajeRepository;
 import com.example.agricultor.repository.TransporteRepository;
 import com.example.agricultor.repository.TransportistaRepository;
+import com.example.agricultor.security.UserSecurityService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -43,8 +45,18 @@ public class ParcialidadService {
     @Value("${api.agricultor.key}")
     private String apiKey;
 
+    @Autowired
+    private UserSecurityService userSecurity;
+
     @Transactional
     public Parcialidad guardarYActualizarDisponibilidad(Parcialidad parcialidad) {
+        UserSessionContext session = userSecurity.getUserSession();
+
+        if (session != null && session.getIdUsuario() != null) {
+            // Asignamos el ID del usuario logueado a los campos de auditoría
+            parcialidad.setCreadopor(session.getIdUsuario().intValue());
+            parcialidad.setModificadopor(session.getIdUsuario().intValue());
+        }
         // 1. Lógica local existente
         parcialidad.setEliminado(false);
         Parcialidad nuevaParcialidad = parcialidadRepository.save(parcialidad);

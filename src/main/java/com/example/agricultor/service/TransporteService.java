@@ -116,19 +116,24 @@ public class TransporteService {
 
     public List<Map<String, Object>> listarTransportesPorUsuario() {
         Long idUsuarioLogueado = userSecurityService.getCurrentUserId();
-        String sql = "SELECT t.placa, " +
+        String sql = "SELECT t.idtransporte, t.placa, " +
                 "c_marca.nombre as marca, " +
                 "c_color.nombre as color, " +
                 "c_linea.nombre as linea, " +
-                "t.modelo, " + // Esto traerá el año (varchar) directamente
+                "t.modelo, " +
                 "c_estado.nombre as estado, " +
-                "t.disponible " +
+                "t.disponible, " +
+                "(SELECT p.nocuenta FROM agricultor.parcialidades parc " +
+                " JOIN agricultor.pesajes p ON parc.idpesaje = p.idpesaje " +
+                " WHERE parc.idtransporte = t.idtransporte AND parc.eliminado = false " +
+                " ORDER BY parc.fechacreacion DESC LIMIT 1) as nocuenta " +
                 "FROM agricultor.transportes t " +
-                "LEFT JOIN agricultor.catalogos c_marca ON CAST(t.marca AS INTEGER) = c_marca.id " +
-                "LEFT JOIN agricultor.catalogos c_color ON CAST(t.color AS INTEGER) = c_color.id " +
-                "LEFT JOIN agricultor.catalogos c_linea ON CAST(t.linea AS INTEGER) = c_linea.id " +
+                "LEFT JOIN agricultor.catalogos c_marca ON t.marca = c_marca.id " +
+                "LEFT JOIN agricultor.catalogos c_color ON t.color = c_color.id " +
+                "LEFT JOIN agricultor.catalogos c_linea ON t.linea = c_linea.id " +
                 "LEFT JOIN agricultor.catalogos c_estado ON t.estado = c_estado.id " +
                 "WHERE t.creadopor = ? AND t.eliminado = false";
+
         return jdbcTemplate.queryForList(sql, idUsuarioLogueado.intValue());
     }
 

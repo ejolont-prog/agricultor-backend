@@ -19,8 +19,9 @@ public class TransportistaREST {
     private TransportistaService service;
 
     @GetMapping
-    public ResponseEntity<List<Transportista>> listar() {
-        // Ahora que el service no pide el token, esto ya no saldrá en rojo
+    public ResponseEntity<List<Map<String, Object>>> listar() {
+        // Al devolver Map<String, Object>, Jackson (Spring) convertirá
+        // automáticamente el resultado a un JSON que Angular entenderá.
         return ResponseEntity.ok(service.listarPorAgricultor());
     }
 
