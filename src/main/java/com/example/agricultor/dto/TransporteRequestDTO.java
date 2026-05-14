@@ -16,6 +16,7 @@ public class TransporteRequestDTO {
     private Long idColor;
     private Integer idModelo;
     private String nitAgricultor;
+    private String nombreTipoPlaca;
 
     @JsonProperty("nombreMarca")
     private String nombreMarca;
