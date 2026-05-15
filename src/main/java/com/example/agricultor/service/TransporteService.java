@@ -1,34 +1,28 @@
-package com.example.agricultor.service;// --- IMPORTS DE SPRING FRAMEWORK ---
+package com.example.agricultor.service;
+
 import com.example.agricultor.dto.TransporteRequestDTO;
-import com.example.agricultor.model.Transportista;
-import com.example.agricultor.repository.CatalogoRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-// --- IMPORTS DE JAVA UTIL ---
-import java.time.LocalDate;
-import java.util.List;
-import java.util.Map;
-
-// --- IMPORTS DE TU PROYECTO (Verifica que los paquetes coincidan) ---
 import com.example.agricultor.exception.BusinessException;
 import com.example.agricultor.model.Transporte;
+import com.example.agricultor.repository.CatalogoRepository;
 import com.example.agricultor.repository.TransporteRepository;
 import com.example.agricultor.security.UserSecurityService;
-import org.springframework.web.client.RestOperations;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate; // <--- NUEVO
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class TransporteService {
@@ -45,8 +39,10 @@ public class TransporteService {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate; // <--- NUEVO: Para enviar mensajes a WebSockets
+
     public List<Transporte> listarDisponibles() {
-        // Nota: Asegúrate de que el esquema sea 'beneficio' o 'agricultor' según tu DB real
         String sql = "SELECT * FROM agricultor.transportes " +
                 "WHERE disponible = true AND eliminado = false";
 
@@ -58,12 +54,10 @@ public class TransporteService {
             t.setColor(rs.getInt("color"));
             t.setLinea(rs.getInt("linea"));
             t.setModelo(rs.getString("modelo"));
-
             return t;
         });
     }
 
-    // En com.example.agricultor.service.TransporteService
     @Transactional
     public Object crearTransporte(TransporteRequestDTO dto) {
         RestTemplate restTemplate = new RestTemplate();
@@ -73,7 +67,6 @@ public class TransporteService {
         dto.setNitAgricultor(obtenerNitUsuarioLogueado(idUsuarioLogueado));
 
         try {
-            // EXTRAER EL TOKEN DE LA PETICIÓN ACTUAL PARA PASARLO A BENEFICIO
             ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             String token = (attrs != null) ? attrs.getRequest().getHeader("Authorization") : null;
 
@@ -83,11 +76,9 @@ public class TransporteService {
 
             HttpEntity<TransporteRequestDTO> entity = new HttpEntity<>(dto, headers);
 
-            // 1. Llamada a BENEFICIO
             ResponseEntity<Object> respuesta = restTemplate.postForEntity(urlBeneficio, entity, Object.class);
 
             if (respuesta.getStatusCode().is2xxSuccessful()) {
-                // 2. Si beneficio OK, guardamos en AGRICULTOR usando JPA o JDBC
                 String sql = "INSERT INTO agricultor.transportes " +
                         "(placa, tipoplaca, marca, color, linea, modelo, estado, disponible, creadopor) " +
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -99,14 +90,17 @@ public class TransporteService {
                         dto.getIdColor().intValue(),
                         dto.getIdLinea().intValue(),
                         String.valueOf(dto.getIdModelo()),
-                        28, // ID Estado inicial en Agricultor
+                        28,
                         true,
                         idUsuarioLogueado.intValue()
                 );
+
+                // --- NUEVO: NOTIFICAR CREACIÓN VIA WEBSOCKET ---
+                notificarCambioTransporte(dto.getPlaca().toUpperCase(), "REGISTRADO", true, null);
+
                 return respuesta.getBody();
             }
         } catch (HttpStatusCodeException e) {
-            // Captura el error 400/403/500 que mande Beneficio
             throw new BusinessException(e.getResponseBodyAsString());
         } catch (Exception e) {
             throw new BusinessException("Error en comunicación: " + e.getMessage());
@@ -116,63 +110,70 @@ public class TransporteService {
 
     public List<Map<String, Object>> listarTransportesPorUsuario() {
         Long idUsuarioLogueado = userSecurityService.getCurrentUserId();
-        String sql = "SELECT t.placa, " +
+        String sql = "SELECT t.idtransporte, t.placa, " +
                 "c_marca.nombre as marca, " +
                 "c_color.nombre as color, " +
                 "c_linea.nombre as linea, " +
-                "t.modelo, " + // Esto traerá el año (varchar) directamente
+                "t.modelo, " +
                 "c_estado.nombre as estado, " +
-                "t.disponible " +
+                "t.disponible, " +
+                "(SELECT p.nocuenta FROM agricultor.parcialidades parc " +
+                " JOIN agricultor.pesajes p ON parc.idpesaje = p.idpesaje " +
+                " WHERE parc.idtransporte = t.idtransporte AND parc.eliminado = false " +
+                " ORDER BY parc.fechacreacion DESC LIMIT 1) as nocuenta " +
                 "FROM agricultor.transportes t " +
-                "LEFT JOIN agricultor.catalogos c_marca ON CAST(t.marca AS INTEGER) = c_marca.id " +
-                "LEFT JOIN agricultor.catalogos c_color ON CAST(t.color AS INTEGER) = c_color.id " +
-                "LEFT JOIN agricultor.catalogos c_linea ON CAST(t.linea AS INTEGER) = c_linea.id " +
+                "LEFT JOIN agricultor.catalogos c_marca ON t.marca = c_marca.id " +
+                "LEFT JOIN agricultor.catalogos c_color ON t.color = c_color.id " +
+                "LEFT JOIN agricultor.catalogos c_linea ON t.linea = c_linea.id " +
                 "LEFT JOIN agricultor.catalogos c_estado ON t.estado = c_estado.id " +
                 "WHERE t.creadopor = ? AND t.eliminado = false";
-        return jdbcTemplate.queryForList(sql, idUsuarioLogueado.intValue());
-    }
 
-    private String obtenerNombreCatalogo(Object id) {
-        if (id == null || id.toString().isEmpty()) return "N/A";
-        try {
-            String sql = "SELECT nombre FROM agricultor.catalogos WHERE id = ?";
-            return jdbcTemplate.queryForObject(sql, String.class, id);
-        } catch (Exception e) {
-            return "N/A";
-        }
+        return jdbcTemplate.queryForList(sql, idUsuarioLogueado.intValue());
     }
 
     @Transactional
     public void sincronizarEstadoDesdeBeneficio(String placa, String nombreEstado) {
         System.out.println("Sincronizando Agricultor - Placa: " + placa + " Estado: " + nombreEstado);
 
-        // 1. Buscar el ID
         Integer nuevoIdEstado = repositoryCatalogo.findIdByNombreAndCatalogoCuatro(nombreEstado);
-        System.out.println("ID encontrado en Catálogo 4 de Agricultor: " + nuevoIdEstado);
 
         if (nuevoIdEstado == null) {
-            throw new BusinessException("No se encontró el estado '" + nombreEstado + "' en el catálogo de Agricultor (IDCATALOGO=4).");
+            throw new BusinessException("No se encontró el estado '" + nombreEstado + "' en el catálogo de Agricultor.");
         }
 
-        // 2. Ejecutar Update con modificadopor fijo y fecha actual de la DB
-        // Usamos CURRENT_TIMESTAMP o NOW() directamente en el SQL para asegurar precisión
         String sql = "UPDATE agricultor.transportes SET estado = ?, modificadopor = 1, fechamodificacion = CURRENT_TIMESTAMP WHERE placa = ?";
 
         int filas = jdbcTemplate.update(sql, nuevoIdEstado, placa);
-        System.out.println("Filas actualizadas en Agricultor: " + filas);
 
         if (filas == 0) {
             throw new BusinessException("No se encontró registro para la placa: " + placa);
         }
+
+        // --- NUEVO: NOTIFICAR CAMBIO DE ESTADO VIA WEBSOCKET ---
+        // Aquí enviamos el nombre del estado para que el front lo pinte directamente
+        notificarCambioTransporte(placa, nombreEstado, null, null);
+    }
+
+    /**
+     * MÉTODO AUXILIAR PARA ENVIAR LA NOTIFICACIÓN
+     */
+    private void notificarCambioTransporte(String placa, String estado, Boolean disponible, String nocuenta) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("placa", placa);
+        payload.put("estado", estado);
+        if (disponible != null) payload.put("disponible", disponible);
+        if (nocuenta != null) payload.put("nocuenta", nocuenta);
+
+        // Enviamos al tópico que configuramos en el Front de Angular
+        messagingTemplate.convertAndSend("/topic/actualizacion-transporte", payload);
     }
 
     private String obtenerNitUsuarioLogueado(Long idUsuario) {
         try {
-            // Consultamos el nit en la tabla de usuarios del esquema agricultor
             String sql = "SELECT nit FROM agricultor.usuario WHERE idusuario = ?";
             return jdbcTemplate.queryForObject(sql, String.class, idUsuario);
         } catch (Exception e) {
-            return "N/A"; // Valor por defecto si no se encuentra
+            return "N/A";
         }
     }
 }
