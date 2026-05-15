@@ -6,13 +6,13 @@ import com.example.agricultor.model.Transportista;
 import com.example.agricultor.repository.CatalogoRepository;
 import com.example.agricultor.repository.TransportistaRepository;
 import com.example.agricultor.security.UserSecurityService;
-import com.fasterxml.jackson.core.ObjectCodec;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate; // <--- NUEVO
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpStatusCodeException;
@@ -22,6 +22,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.LocalDate;
 import java.time.Period;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,6 +40,9 @@ public class TransportistaService {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate; // <--- NUEVO
 
     public List<Transportista> listarDisponibles() {
         String sql = "SELECT * FROM agricultor.transportistas " +
@@ -60,18 +64,13 @@ public class TransportistaService {
         String urlBeneficio = "http://localhost:8083/api/transportistas-beneficio/validar-y-crear";
         Long idUsuarioLogueado = userSecurityService.getCurrentUserId();
         dto.setNitAgricultor(obtenerNitUsuarioLogueado(idUsuarioLogueado));
-        String nitDelEmisor = obtenerNitUsuarioLogueado(idUsuarioLogueado);
-        dto.setNitAgricultor(nitDelEmisor);
 
-        // --- 1. VALIDACIÓN DE FECHA DE LICENCIA ---
         if (dto.getFechaVencimientoLicencia() != null) {
-            // Comparamos contra el inicio del día de hoy
             if (dto.getFechaVencimientoLicencia().isBefore(LocalDate.now())) {
                 throw new BusinessException("La licencia se encuentra vencida");
             }
         }
 
-        // --- 2. VALIDACIÓN DE EDAD ---
         if (dto.getFechaNacimiento() != null && Period.between(dto.getFechaNacimiento(), LocalDate.now()).getYears() < 18) {
             throw new BusinessException("El transportista es menor de edad");
         }
@@ -83,13 +82,10 @@ public class TransportistaService {
             headers.setContentType(MediaType.APPLICATION_JSON);
             if (token != null) headers.set("Authorization", token);
 
-            // --- 3. ENVIAR A BENEFICIO ---
-
             HttpEntity<TransportistaRequestDTO> entity = new HttpEntity<>(dto, headers);
             ResponseEntity<Object> respuesta = restTemplate.postForEntity(urlBeneficio, entity, Object.class);
 
             if (respuesta.getStatusCode().is2xxSuccessful()) {
-                // --- 4. INSERT LOCAL (Asegúrate de que los nombres de columna coincidan) ---
                 String sql = "INSERT INTO agricultor.transportistas " +
                         "(cui, nombrecompleto, fechanacimiento, tipolicencia, fechavencimientolicencia, estado, disponible, creadopor, eliminado) " +
                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -98,19 +94,22 @@ public class TransportistaService {
                         dto.getCui(),
                         dto.getNombreCompleto(),
                         dto.getFechaNacimiento(),
-                        dto.getIdTipoLicencia(), // <--- ID numérico para Agricultor
+                        dto.getIdTipoLicencia(),
                         dto.getFechaVencimientoLicencia(),
                         28,
                         true,
                         idUsuarioLogueado.intValue(),
                         false
                 );
+
+                // --- NOTIFICAR CREACIÓN ---
+                notificarCambioTransportista(dto.getCui(), "REGISTRADO", true, null);
+
                 return respuesta.getBody();
             }
         } catch (HttpStatusCodeException e) {
             throw new BusinessException(e.getResponseBodyAsString());
         } catch (Exception e) {
-            e.printStackTrace();
             throw new BusinessException("Error: " + e.getMessage());
         }
         throw new BusinessException("No se pudo completar el registro.");
@@ -134,57 +133,41 @@ public class TransportistaService {
         return jdbcTemplate.queryForList(sql, idUsuarioLogueado.intValue());
     }
 
+    @Transactional
+    public void sincronizarEstadoDesdeBeneficio(String cui, String nombreEstado) {
+        Integer nuevoIdEstado = repositoryCatalogo.findIdByNombreAndCatalogoCuatro(nombreEstado);
+        if (nuevoIdEstado == null) {
+            throw new BusinessException("No existe estado: " + nombreEstado);
+        }
+
+        String sql = "UPDATE agricultor.transportistas SET estado = ?, modificadopor = 1, fechamodificacion = CURRENT_TIMESTAMP WHERE cui = ?";
+        int filas = jdbcTemplate.update(sql, nuevoIdEstado, cui);
+
+        if (filas == 0) {
+            throw new BusinessException("No existe transportista con CUI: " + cui);
+        }
+
+        // --- NOTIFICAR CAMBIO DE ESTADO ---
+        notificarCambioTransportista(cui, nombreEstado, null, null);
+    }
+
+    // MÉTODO AUXILIAR DE NOTIFICACIÓN
+    private void notificarCambioTransportista(String cui, String nombreEstado, Boolean disponible, String nocuenta) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("cui", cui);
+        payload.put("nombreEstado", nombreEstado);
+        if (disponible != null) payload.put("disponible", disponible);
+        if (nocuenta != null) payload.put("nocuenta", nocuenta);
+
+        messagingTemplate.convertAndSend("/topic/actualizacion-transportista", payload);
+    }
+
     private String obtenerNitUsuarioLogueado(Long idUsuario) {
         try {
-            // Consultamos el nit en la tabla de usuarios del esquema agricultor
             String sql = "SELECT nit FROM agricultor.usuario WHERE idusuario = ?";
             return jdbcTemplate.queryForObject(sql, String.class, idUsuario);
         } catch (Exception e) {
-            return "N/A"; // Valor por defecto si no se encuentra
-        }
-    }
-
-    @Transactional
-    public void sincronizarEstadoDesdeBeneficio(
-            String cui,
-            String nombreEstado) {
-
-        // =========================
-        // BUSCAR ID DEL ESTADO
-        // =========================
-
-        Integer nuevoIdEstado = repositoryCatalogo.findIdByNombreAndCatalogoCuatro(nombreEstado);
-
-        if (nuevoIdEstado == null) {
-
-            throw new BusinessException(
-                    "No existe estado: " + nombreEstado
-            );
-        }
-
-        // =========================
-        // UPDATE
-        // =========================
-
-        String sql = """
-        UPDATE agricultor.transportistas
-        SET estado = ?,
-            modificadopor = 1,
-            fechamodificacion = CURRENT_TIMESTAMP
-        WHERE cui = ?
-    """;
-
-        int filas = jdbcTemplate.update(
-                sql,
-                nuevoIdEstado,
-                cui
-        );
-
-        if (filas == 0) {
-
-            throw new BusinessException(
-                    "No existe transportista con CUI: " + cui
-            );
+            return "N/A";
         }
     }
 }
