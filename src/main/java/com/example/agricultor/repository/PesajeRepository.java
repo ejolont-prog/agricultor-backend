@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface PesajeRepository extends JpaRepository<Pesaje, Long> {
@@ -19,4 +20,6 @@ public interface PesajeRepository extends JpaRepository<Pesaje, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true) // Agrega esto
     @Query("UPDATE Pesaje p SET p.cantidadparcialidades = COALESCE(p.cantidadparcialidades, 0) + 1 WHERE p.idpesaje = :id")
     void incrementarContadorParcialidades(@Param("id") Integer id);
+
+    Optional<Pesaje> findByNocuenta(String nocuenta);
 }

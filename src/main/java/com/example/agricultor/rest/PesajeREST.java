@@ -6,10 +6,12 @@ import com.example.agricultor.service.PesajeService;
 import com.example.agricultor.security.UserSecurityService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/pesajes")
@@ -18,7 +20,8 @@ public class PesajeREST {
 
     @Autowired
     private PesajeService pesajeService;
-
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
     @Autowired
     private UserSecurityService userSecurityService; // Inyectamos el servicio de seguridad
 
@@ -50,5 +53,34 @@ public class PesajeREST {
         Pesaje guardado = pesajeService.guardarPesaje(pesaje);
 
         return ResponseEntity.ok(guardado);
+    }
+
+    @PostMapping("/cuentas/actualizar-estado")
+    public ResponseEntity<?> actualizarEstadoDesdeBeneficio(@RequestBody Map<String, Object> payload) {
+        try {
+            // 1. Extraemos los parámetros enviados desde el módulo del Beneficio
+            if (payload.get("nocuenta") == null || payload.get("estado") == null) {
+                return ResponseEntity.badRequest().body("{\"error\": \"Faltan parámetros obligatorios en el payload.\"}");
+            }
+
+            String nocuenta = payload.get("nocuenta").toString();
+            Integer nuevoEstado = Integer.parseInt(payload.get("estado").toString());
+
+            // 2. Sentencia SQL dirigida al esquema 'agricultor', tabla 'pesajes'
+            // Modificamos el campo 'estado' basándonos en el 'nocuenta' recibido
+            String sqlUpdate = "UPDATE agricultor.pesajes SET estado = ? WHERE nocuenta = ?";
+
+            // 3. Ejecutamos la actualización de manera segura
+            int filasAfectadas = jdbcTemplate.update(sqlUpdate, nuevoEstado, nocuenta);
+
+            if (filasAfectadas == 0) {
+                return ResponseEntity.status(404).body("{\"error\": \"No se encontró ningún pesaje con el No. Cuenta: " + nocuenta + " en el esquema agricultor.\"}");
+            }
+
+            return ResponseEntity.ok("{\"status\": \"Estado actualizado correctamente en Agricultor a [" + nuevoEstado + "]\"}");
+
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("{\"error\": \"Error al actualizar el estado en Agricultor: " + e.getMessage() + "\"}");
+        }
     }
 }

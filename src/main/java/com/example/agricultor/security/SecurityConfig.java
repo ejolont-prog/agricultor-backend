@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -38,6 +39,8 @@ public class SecurityConfig {
                         // Permitimos el acceso al endpoint del socket y a sus sub-rutas (info, iframe, etc)
                         .requestMatchers("/ws-agricultor/**").permitAll()
 
+                        .requestMatchers("/api/externo/**").permitAll()
+                        .requestMatchers("/api/sincronizacion/**").permitAll()
                         // Rutas de negocio
                         .requestMatchers("/api/transportistas/**", "/api/transportes/**").hasRole("USER")
 
@@ -52,12 +55,16 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:4500", "http://localhost:4200"));
+        config.setAllowedOrigins(List.of("http://localhost:4500", "http://localhost:4200","http://localhost:4600"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
         config.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
+    }
+    @Bean
+    public WebSecurityCustomizer webSecurityCustomizer() {
+        return (web) -> web.ignoring().requestMatchers("/api/sincronizacion/**");
     }
 }
