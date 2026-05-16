@@ -52,27 +52,40 @@ public class SincronizacionREST {
     @PutMapping("/actualizar-parcialidad")
     public ResponseEntity<?> sincronizarEstado(@RequestBody NotificacionEstadoDTO dto) {
         try {
-            // Evaluamos a qué ID de catálogo pasarlo en el entorno de Agricultor
-            // 139 para ACEPTADO, 140 para RECHAZADO
+            // 1. Evaluamos a qué ID de catálogo pasarlo en el entorno de Agricultor (139 o 140)
             int nuevoEstadoId = dto.getResultado().equals("ACEPTADO") ? 139 : 140;
 
-            // 🚨 CORREGIDO: Cambiamos "idpesaje" por "idparcialidad" en el WHERE para usar la llave primaria real
-            String sql = "UPDATE agricultor.parcialidades SET estadoparcialidad = ? WHERE idparcialidad = ?";
-
-            // Convertimos el String a Integer o Long si tu noparcialidad viene como texto numérico
+            // Convertimos el idparcialidad entrante a número entero (serial4/int4)
             int idClave = Integer.parseInt(dto.getNoparcialidad());
 
-            int filasAfectadas = jdbcTemplate.update(sql, nuevoEstadoId, idClave);
+            // 2. 🔍 OBTENER EL idpesaje ASOCIADO: Buscamos en parcialidades usando la columna exacta de la imagen
+            String sqlBuscarPesaje = "SELECT idpesaje FROM agricultor.parcialidades WHERE idparcialidad = ? LIMIT 1";
+            Integer idPesajeAsociado = jdbcTemplate.queryForObject(sqlBuscarPesaje, Integer.class, idClave);
+
+            // 3. 🔄 ACTUALIZAR PARCIALIDAD: Usamos "estadoparcialidad" e "idparcialidad" exactos de tu tabla
+            String sqlParcialidad = "UPDATE agricultor.parcialidades SET estadoparcialidad = ? WHERE idparcialidad = ?";
+            int filasAfectadas = jdbcTemplate.update(sqlParcialidad, nuevoEstadoId, idClave);
 
             if (filasAfectadas > 0) {
-                return ResponseEntity.ok("{\"mensaje\": \"Estado sincronizado en Agricultor con éxito\"}");
+
+                // 4. 🚀 ACTUALIZAR TABLA PESAJES: Si encontramos el idpesaje padre, cambiamos su campo "estado" al ID 165
+                if (idPesajeAsociado != null) {
+                    String sqlPesajePadre = "UPDATE agricultor.pesajes SET estado = 165 WHERE idpesaje = ?";
+                    jdbcTemplate.update(sqlPesajePadre, idPesajeAsociado);
+                    System.out.println(" Sincronización exitosa: Tabla pesajes (idpesaje: " + idPesajeAsociado + ") actualizada al estado 165");
+                }
+
+                return ResponseEntity.ok("{\"mensaje\": \"Estado de parcialidad y pesaje principal sincronizados con éxito\"}");
             } else {
                 return ResponseEntity.badRequest().body("{\"error\": \"No se encontró la parcialidad número: " + dto.getNoparcialidad() + "\"}");
             }
+
         } catch (NumberFormatException e) {
             return ResponseEntity.badRequest().body("{\"error\": \"El formato del campo noparcialidad no es un número válido: " + dto.getNoparcialidad() + "\"}");
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            return ResponseEntity.badRequest().body("{\"error\": \"No se encontró un registro de pesaje asociado para la parcialidad proporcionada.\"}");
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("{\"error\": \"Error al sincronizar: " + e.getMessage() + "\"}");
+            return ResponseEntity.internalServerError().body("{\"error\": \"Error al sincronizar en Agricultor: " + e.getMessage() + "\"}");
         }
     }
 }
