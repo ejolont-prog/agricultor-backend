@@ -38,6 +38,8 @@ public class SecurityConfig {
                         // Permitimos el acceso al endpoint del socket y a sus sub-rutas (info, iframe, etc)
                         .requestMatchers("/ws-agricultor/**").permitAll()
 
+                        .requestMatchers("/api/externo/**").permitAll()
+
                         // Rutas de negocio
                         .requestMatchers("/api/transportistas/**", "/api/transportes/**").hasRole("USER")
 
