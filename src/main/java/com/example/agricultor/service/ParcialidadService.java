@@ -53,11 +53,13 @@ public class ParcialidadService {
         UserSessionContext session = userSecurity.getUserSession();
 
         if (session != null && session.getIdUsuario() != null) {
-            // Asignamos el ID del usuario logueado a los campos de auditoría
             parcialidad.setCreadopor(session.getIdUsuario().intValue());
             parcialidad.setModificadopor(session.getIdUsuario().intValue());
         }
-        // 1. Lógica local existente
+
+
+        parcialidad.setEstadoparcialidad(137);
+
         parcialidad.setEliminado(false);
         Parcialidad nuevaParcialidad = parcialidadRepository.save(parcialidad);
 
@@ -73,7 +75,6 @@ public class ParcialidadService {
             transportistaRepository.marcarComoNoDisponible(parcialidad.getIdtransportista().longValue());
         }
 
-        // 2. NUEVO: Disparar envío asíncrono al Beneficio
         enviarParcialidadABeneficio(nuevaParcialidad);
 
         return nuevaParcialidad;

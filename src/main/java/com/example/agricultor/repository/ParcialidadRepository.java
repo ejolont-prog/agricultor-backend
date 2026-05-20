@@ -23,6 +23,7 @@ public interface ParcialidadRepository extends JpaRepository<Parcialidad, Intege
         p.idtransportista,
         ts.nombrecompleto,
         p.estadoparcialidad,
+        c.nombre AS nombreEstado, 
         p.pesoestimadoparcialidad,
         p.textorechazado,
         p.qr,
@@ -37,6 +38,7 @@ public interface ParcialidadRepository extends JpaRepository<Parcialidad, Intege
     FROM agricultor.parcialidades p
     LEFT JOIN agricultor.transportes t ON t.idtransporte = p.idtransporte
     LEFT JOIN agricultor.transportistas ts ON ts.idtransportista = p.idtransportista
+    LEFT JOIN agricultor.catalogos c ON c.id = p.estadoparcialidad -- Join con catálogos
     WHERE p.idpesaje = :idpesaje AND p.eliminado = false
 """, nativeQuery = true)
     List<ParcialidadConPlacaProjection> findByIdpesajeAndEliminadoFalse(@Param("idpesaje") Integer idpesaje);
