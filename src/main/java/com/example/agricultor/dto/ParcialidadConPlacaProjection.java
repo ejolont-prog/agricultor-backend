@@ -22,4 +22,6 @@ public interface ParcialidadConPlacaProjection {
     Integer getModificadopor();
     LocalDateTime getFechamodificacion();
     Boolean getEliminado();
+
+    String getNombreEstado();
 }
