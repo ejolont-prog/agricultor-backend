@@ -88,4 +88,54 @@ public class SincronizacionREST {
             return ResponseEntity.internalServerError().body("{\"error\": \"Error al sincronizar en Agricultor: " + e.getMessage() + "\"}");
         }
     }
+
+
+    @PutMapping("/actualizar-parcialidad-pesado")
+    public ResponseEntity<?> sincronizarEstadoPesado(@RequestBody NotificacionEstadoDTO dto) {
+        try {
+            // 1. Validar que el resultado sea estrictamente "PESADO"
+            if (dto.getResultado() == null || !dto.getResultado().equalsIgnoreCase("PESADO")) {
+                return ResponseEntity.badRequest().body("{\"error\": \"El resultado enviado debe ser 'PESADO'.\"}");
+            }
+
+            // Convertimos el noparcialidad (String) a número entero (idparcialidad)
+            int idClave = Integer.parseInt(dto.getNoparcialidad());
+
+            // 2. Definimos el ID de catálogo fijo que me solicitas
+            int nuevoEstadoId = 143; // Estado: Pesado
+
+            // 3. OBTENER EL idpesaje ASOCIADO: Buscamos el padre para mantener la trazabilidad
+            String sqlBuscarPesaje = "SELECT idpesaje FROM agricultor.parcialidades WHERE idparcialidad = ? LIMIT 1";
+            Integer idPesajeAsociado = jdbcTemplate.queryForObject(sqlBuscarPesaje, Integer.class, idClave);
+
+            // 4. 🔄 ACTUALIZAR PARCIALIDAD: Cambiamos "estadoparcialidad" al ID 143
+            String sqlParcialidad = "UPDATE agricultor.parcialidades SET estadoparcialidad = ? WHERE idparcialidad = ?";
+            int filasAfectadas = jdbcTemplate.update(sqlParcialidad, nuevoEstadoId, idClave);
+
+            if (filasAfectadas > 0) {
+                System.out.println("✅ Parcialidad ID " + idClave + " actualizada con éxito al estado 143 (Pesado)");
+
+                // Opcional: Si necesitas que al pesar una parcialidad el pesaje padre también
+                // cambie a algún estado en específico (como el 165 que tenías en el otro método),
+                // puedes descomentar las líneas de abajo:
+            /*
+            if (idPesajeAsociado != null) {
+                String sqlPesajePadre = "UPDATE agricultor.pesajes SET estado = 165 WHERE idpesaje = ?";
+                jdbcTemplate.update(sqlPesajePadre, idPesajeAsociado);
+            }
+            */
+
+                return ResponseEntity.ok("{\"mensaje\": \"Estado de la parcialidad actualizado a Pesado (143) con éxito\"}");
+            } else {
+                return ResponseEntity.status(404).body("{\"error\": \"No se encontró la parcialidad número: " + dto.getNoparcialidad() + "\"}");
+            }
+
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body("{\"error\": \"El formato del campo noparcialidad no es un número válido: " + dto.getNoparcialidad() + "\"}");
+        } catch (org.springframework.dao.EmptyResultDataAccessException e) {
+            return ResponseEntity.status(404).body("{\"error\": \"No se encontró la parcialidad especificada en la base de datos.\"}");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("{\"error\": \"Error al actualizar a pesado en Agricultor: " + e.getMessage() + "\"}");
+        }
+    }
 }

@@ -41,6 +41,7 @@ public class SecurityConfig {
 
                         .requestMatchers("/api/externo/**").permitAll()
                         .requestMatchers("/api/sincronizacion/**").permitAll()
+                        .requestMatchers("/api/pesajes/cuentas/actualizar-finalizadopesaje").permitAll()
                         // Rutas de negocio
                         .requestMatchers("/api/transportistas/**", "/api/transportes/**").hasRole("USER")
 

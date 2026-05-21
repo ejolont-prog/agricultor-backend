@@ -1,5 +1,6 @@
 package com.example.agricultor.rest;
 
+import com.example.agricultor.dto.RecibirEstadoDTO;
 import com.example.agricultor.model.Pesaje;
 import com.example.agricultor.model.UserSessionContext;
 import com.example.agricultor.service.PesajeService;
@@ -81,6 +82,32 @@ public class PesajeREST {
 
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("{\"error\": \"Error al actualizar el estado en Agricultor: " + e.getMessage() + "\"}");
+        }
+    }
+
+    @PostMapping("/cuentas/actualizar-finalizadopesaje")
+    public ResponseEntity<?> actualizarFinalizadoPesaje(@RequestBody RecibirEstadoDTO payload) {
+
+        System.out.println("📥 ¡Invocación recibida en actualizar-finalizadopesaje!");
+        System.out.println("--> noCuenta recibido: " + payload.getNoCuenta());
+        System.out.println("--> detalleCatalogo recibido: " + payload.getDetalleCatalogo());
+
+        try {
+            if (payload.getNoCuenta() == null) {
+                return ResponseEntity.badRequest().body("{\"error\": \"El campo 'noCuenta' es obligatorio.\"}");
+            }
+
+            boolean actualizado = pesajeService.actualizarEstadoPorCierre(payload);
+
+            if (actualizado) {
+                return ResponseEntity.ok("{\"status\": \"Estado de cuenta finalizado correctamente en Agricultor para la cuenta " + payload.getNoCuenta() + "\"}");
+            } else {
+                return ResponseEntity.status(404).body("{\"error\": \"No se encontró ningún pesaje con el No. Cuenta: " + payload.getNoCuenta() + " en el esquema agricultor.\"}");
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace(); // 👈 Esto te pintará el error exacto en la consola si truena el SQL
+            return ResponseEntity.internalServerError().body("{\"error\": \"Error al finalizar el estado en Agricultor: " + e.getMessage() + "\"}");
         }
     }
 }
