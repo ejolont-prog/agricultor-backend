@@ -162,4 +162,46 @@ public class PesajeService {
             System.err.println("❌ Error actualizando localmente: " + e.getMessage());
         }
     }
+    @org.springframework.transaction.annotation.Transactional
+    public boolean actualizarEstadoPorCierre(com.example.agricultor.dto.RecibirEstadoDTO dto) {
+        // 1. Buscar si la cuenta existe en el sistema de Agricultor
+        java.util.Optional<Pesaje> pesajeOpt = repository.findByNocuenta(dto.getNoCuenta());
+        if (pesajeOpt.isEmpty()) {
+            System.err.println("❌ No se encontró la cuenta " + dto.getNoCuenta() + " en la BD de Agricultor.");
+            return false;
+        }
+
+        Pesaje pesaje = pesajeOpt.get();
+
+        // 2. ID del estado destino para Agricultor (166: Pesaje Finalizado)
+        Long estadoFinalizadoId = 166L;
+
+        // 3. Ejecutar la actualización en la BD
+        String sql = "UPDATE agricultor.pesajes SET estado = ?, fechamodificacion = ? WHERE nocuenta = ?";
+        jdbcTemplate.update(sql, estadoFinalizadoId, LocalDateTime.now(), dto.getNoCuenta());
+        System.out.println("✅ Cuenta " + dto.getNoCuenta() + " actualizada exitosamente al estado 166.");
+
+        // 4. Buscar el nombre del estado en el catálogo para el WebSocket
+        String nombreEstadoFinal = "Pesaje Finalizado";
+        var estadosCatalogo = catalogoRepository.findByIdcatalogo(12L);
+        var catalogoOpt = estadosCatalogo.stream()
+                .filter(cat -> cat.getId().equals(estadoFinalizadoId))
+                .findFirst();
+
+        if (catalogoOpt.isPresent()) {
+            nombreEstadoFinal = catalogoOpt.get().getNombre();
+        }
+
+        // 5. Enviar actualización en tiempo real por WebSocket
+        com.example.agricultor.dto.RespuestaBeneficioDTO wsNotification = new com.example.agricultor.dto.RespuestaBeneficioDTO();
+        wsNotification.setNocuenta(dto.getNoCuenta());
+        wsNotification.setId(pesaje.getIdpesaje().longValue());
+        wsNotification.setEstado(estadoFinalizadoId);
+        wsNotification.setNombreEstado(nombreEstadoFinal);
+
+        messagingTemplate.convertAndSend("/topic/actualizacion-pesaje", wsNotification);
+        System.out.println("🚀 Notificación de cierre enviada al WebSocket con estado: " + nombreEstadoFinal);
+
+        return true;
+    }
 }

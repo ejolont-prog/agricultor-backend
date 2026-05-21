@@ -31,13 +31,7 @@ public class ParcialidadREST {
         }
     }
 
-    // Listar por Pesaje (Para el flujo FA01: Ver Detalle)
-   /* @GetMapping("/pesaje/{idpesaje}")
-    public List<Parcialidad> listarPorPesaje(@PathVariable Integer idpesaje) {
-        return parcialidadRepository.findByIdpesajeAndEliminadoFalse(idpesaje);
-    }
 
-    */
 
     @GetMapping("/pesaje/{idpesaje}")
     public List<ParcialidadConPlacaProjection> listarPorPesaje(@PathVariable Integer idpesaje) {
