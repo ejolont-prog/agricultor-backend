@@ -93,7 +93,7 @@ public class SincronizacionREST {
     @PutMapping("/actualizar-parcialidad-pesado")
     public ResponseEntity<?> sincronizarEstadoPesado(@RequestBody NotificacionEstadoDTO dto) {
         try {
-            // 1. Validar que el resultado sea estrictamente "PESADO"
+
             if (dto.getResultado() == null || !dto.getResultado().equalsIgnoreCase("PESADO")) {
                 return ResponseEntity.badRequest().body("{\"error\": \"El resultado enviado debe ser 'PESADO'.\"}");
             }
@@ -108,7 +108,7 @@ public class SincronizacionREST {
             String sqlBuscarPesaje = "SELECT idpesaje FROM agricultor.parcialidades WHERE idparcialidad = ? LIMIT 1";
             Integer idPesajeAsociado = jdbcTemplate.queryForObject(sqlBuscarPesaje, Integer.class, idClave);
 
-            // 4. 🔄 ACTUALIZAR PARCIALIDAD: Cambiamos "estadoparcialidad" al ID 143
+
             String sqlParcialidad = "UPDATE agricultor.parcialidades SET estadoparcialidad = ? WHERE idparcialidad = ?";
             int filasAfectadas = jdbcTemplate.update(sqlParcialidad, nuevoEstadoId, idClave);
 
